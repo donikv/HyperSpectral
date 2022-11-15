@@ -13,27 +13,6 @@ from loader import *
 from visualize import show, visualize_set_program
 visualize_set_program(os.path.basename(__file__))
 
-def create_Gcnn(samples, device, n, size, ridge):
-    cnn = GaussianCNNTorch(samples=samples, device=device, n=n, size=size, init_params=ridge)
-    def f(X,y):
-        Rs, _ = cnn.R(X,y)
-        return Rs
-    return cnn, f, "gcnn"
-
-def create_DGcnn(samples, device, n, size, ridge):
-    cnn = DirectGaussianCNNTorch(device=device, n=n, size=size)
-    def f(X,y):
-        Rs, _ = cnn.R(X,y)
-        return Rs
-    return cnn, f, "direct_gcnn"
-
-def create_Rcnn(samples, device, n, size, ridge):
-    cnn = RefineCNN(samples=samples, device=device, n=n, size=size, init_params=ridge)
-    def f(X,y):
-        Rs = cnn.spds
-        return Rs
-    return cnn, f, "refined"
-
 def visualize_fitted(Rs, result_spectral_shape, camspecs):
     Rs = Rs.cpu().detach().numpy()
     print(Rs.shape)
@@ -73,8 +52,8 @@ def visualize_fitted(Rs, result_spectral_shape, camspecs):
     cv2.imwrite(f'./filter_measurements/{image_dir}/generated/human_cnn_{ill_name}.png', (np.stack([rgb[...,2],rgb[...,1],rgb[...,0]], axis=-1) * 255).astype(np.uint8))
 
 if __name__ == '__main__':
-    image_dir = 'test_nikon_outdoors1'
-    image_size = (1024, 512)
+    image_dir = 'test_nikon_papers'
+    image_size = (512, 256)
     result_spectral_shape = SpectralShape(380, 780, 10)
     
     collection = get_images_filters_camera_and_illumination(image_dir, image_size, result_spectral_shape)
@@ -97,7 +76,7 @@ if __name__ == '__main__':
     X = torch.tensor(IFScs_flat.astype(np.float32), requires_grad=True, device=device)
     y = torch.tensor(target.astype(np.float32), requires_grad=True, device=device)
 
-    cnn, get_Rs, name = create_DGcnn(target.shape[0], device, n, size, ridge)
+    cnn, get_Rs, name = create_DGcnn_fixed(target.shape[0], device, n, size, ridge)
     # cnn, get_Rs, name = create_Rcnn(target.shape[0], device, len(result_spectral_shape), size, ridge)
     cnn.to(device)
 

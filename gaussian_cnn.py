@@ -13,8 +13,7 @@ from loader import *
 from visualize import show, visualize_set_program
 visualize_set_program(os.path.basename(__file__))
 
-def visualize_fitted(cnn, result_spectral_shape, camspecs):
-    Rs = cnn.spds#cnn.R(X, y)
+def visualize_fitted(Rs, result_spectral_shape, camspecs):
     Rs = Rs.cpu().detach().numpy()
     print(Rs.shape)
     R = SpectralDistribution(Rs[256*512 // 2, :, 0], [x for x in result_spectral_shape])
@@ -52,10 +51,16 @@ def visualize_fitted(cnn, result_spectral_shape, camspecs):
     show()
     cv2.imwrite(f'./filter_measurements/{image_dir}/generated/human_cnn_{ill_name}.png', (np.stack([rgb[...,2],rgb[...,1],rgb[...,0]], axis=-1) * 255).astype(np.uint8))
 
+def create_DGcnn(samples, device, n, size, ridge):
+    cnn = DirectGaussianCNNTorch(device=device, n=n, size=size)
+    def f(X,y):
+        Rs, _ = cnn.R(X,y)
+        return Rs
+    return cnn, f, "direct_gcnn"
 
 if __name__ == '__main__':
     image_dir = 'test_nikon_outdoors1'
-    image_size = (512, 256)
+    image_size = (2048, 1024)
     result_spectral_shape = SpectralShape(380, 780, 10)
     
     collection = get_images_filters_camera_and_illumination(image_dir, image_size, result_spectral_shape)

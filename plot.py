@@ -13,24 +13,11 @@ from loader import *
 from visualize import show, visualize_set_program
 visualize_set_program(os.path.basename(__file__))
 
-def create_Gcnn(samples, device, n, size, ridge):
-    cnn = GaussianCNNTorch(samples=samples, device=device, n=n, size=size, init_params=ridge)
-    def f(X,y):
-        Rs, _ = cnn.R(X,y)
-        return Rs
-    return cnn, f, "gcnn"
-
-def create_Rcnn(samples, device, n, size, ridge):
-    cnn = RefineCNN(samples=samples, device=device, n=n, size=size, init_params=ridge)
-    def f(X,y):
-        Rs = cnn.spds
-        return Rs
-    return cnn, f, "refined"
-
-def visualize_fitted(Rs, result_spectral_shape, camspecs):
+def visualize_fitted(Rs, result_spectral_shape, camspecs, model_name, image_dir):
     Rs = Rs.cpu().detach().numpy()
     cmfs = colour.colorimetry.MSDS_CMFS_RGB
     cmf = cmfs['Wright & Guild 1931 2 Degree RGB CMFs']
+    camspecs['Human'] = cmf
     cmf = cmf.extrapolate(result_spectral_shape)
     cmf = cmf.interpolate(result_spectral_shape)
     cmf = cmf.to_sds()
@@ -40,8 +27,11 @@ def visualize_fitted(Rs, result_spectral_shape, camspecs):
 
     ills = colour.SDS_ILLUMINANTS
     ill_name = 'ISO 7589 Studio Tungsten'
-    camera_name = 'Huawei_P10lite'
+    camera_name = 'Human'
     cmf = camspecs[camera_name].extrapolate(result_spectral_shape).interpolate(result_spectral_shape).to_sds()
+
+    pth = f'./filter_measurements/{image_dir}/generated/{model_name}/{camera_name}'
+    os.makedirs(pth, exist_ok=True)
 
     ill_names = ['D50','D65','D75','FL3','FL8','FL11','HP1',
            'LED-B1','LED-B3','LED-B5','LED-RGB1','LED-V1','LED-V2','ISO 7589 Studio Tungsten']
@@ -60,10 +50,10 @@ def visualize_fitted(Rs, result_spectral_shape, camspecs):
         rgb = (rgb.clip(0,1) ** (1/2.2))
         # plt.imshow(rgb)
         # show()
-        cv2.imwrite(f'./filter_measurements/{image_dir}/generated/{camera_name}_cnn_{ill_name}.png', (np.stack([rgb[...,2],rgb[...,1],rgb[...,0]], axis=-1) * 255).astype(np.uint8))
+        cv2.imwrite(f'./filter_measurements/{image_dir}/generated/{model_name}/{camera_name}/cnn_{ill_name}.png', (np.stack([rgb[...,2],rgb[...,1],rgb[...,0]], axis=-1) * 255).astype(np.uint8))
 
 if __name__ == '__main__':
-    image_dir = 'test_nikon_outdoors2'
+    image_dir = 'test_nikon_papers'
     image_size = (512, 256)
     result_spectral_shape = SpectralShape(380, 780, 10)
     
@@ -89,6 +79,6 @@ if __name__ == '__main__':
     cnn.to(device)
 
     Rs = get_Rs(X, y)
-    visualize_fitted(Rs, result_spectral_shape, mobile_camspecs)
+    visualize_fitted(Rs, result_spectral_shape, mobile_camspecs, name, image_dir=image_dir)
 
     exit(0)

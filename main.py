@@ -6,7 +6,7 @@ from models import *
 from loader import *
 
 if __name__ == '__main__':
-    image_dir = 'test_nikon_ured'
+    image_dir = 'test_nikon_papers'
     image_size = (512, 256)
     result_spectral_shape = SpectralShape(380, 780, 10)
     
