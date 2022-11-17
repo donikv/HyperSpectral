@@ -2,6 +2,8 @@ import torch
 from torch import nn
 from torch.nn.parameter import Parameter
 from torch.utils.data import DataLoader
+from tqdm import tqdm
+from copy import deepcopy
 
 ln = 3
 laplace_filter = -1 * torch.ones([ln])
@@ -168,6 +170,7 @@ class DirectGaussianCNNTorch(nn.Module):
             nn.Conv2d(256, 128, kernel_size=(3,3), stride=(1,1), padding='same'),
             nn.ReLU(inplace=True),
             nn.Conv2d(128, self.out_channels, kernel_size=(1,1), padding='same'),
+            nn.ReLU(inplace=True),
         )
         
         self.device = device
@@ -179,6 +182,7 @@ class DirectGaussianCNNTorch(nn.Module):
         gm, gauss = self.R(IFS, y_in)
         y = IFS@gm
         return y
+        # return {'output':y, 'regularization':gauss}
     
     def conv(self, x):
         n = self.n
@@ -186,11 +190,12 @@ class DirectGaussianCNNTorch(nn.Module):
         params = self.seq(x)
         params = params.permute(0, 2, 3, 1).reshape((self.size[0]*self.size[1],self.out_channels,1))
         if self.means is not None:
-            std, a = params[:,:n,:], params[:,n:2*n,:]
+            std, a = params[:,:n,:], params[:,n:,:]
             mean = self.means.unsqueeze(0).unsqueeze(-1).tile((std.shape[0],1,1))
+            return self._normalize(mean), std, a
         else:
             mean, std, a = params[:,:n,:], params[:,n:2*n,:], params[:,2*n:,:]
-        return self._normalize(mean), self._normalize(std), self._normalize(a)
+            return self._normalize(mean), self._normalize(std), self._normalize(a)
     
     def _normalize(self,outmap):
         outmap_min, _ = torch.min(outmap, dim=1, keepdim=True)
@@ -199,14 +204,16 @@ class DirectGaussianCNNTorch(nn.Module):
         return outmap
     
     def R(self, IFS, x):
-        mean, bandwidth, a = self.conv(x)
+        mean, std, a = self.conv(x)
         x = torch.linspace(0, 1, IFS.shape[-1], device=self.device).unsqueeze(0).unsqueeze(0).tile((mean.shape[0],mean.shape[1],1))
-        gauss = torch.abs(a) * torch.exp(-(x-(mean))**2/(2 * (bandwidth)**2 + 1e-4))
+        gauss = torch.abs(a) * torch.exp(-(x-(mean))**2/(2 * (std)**2 + 1e-4))
         gm = torch.sum(gauss,dim=1).unsqueeze(-1)
-        return gm, gauss
+        return gm, torch.mean(std)
 
 def fit(model, X, y, optim, loss_fn, epochs, reg, verbose=0):
     f = torch.zeros(1)
+    min_loss = None
+    best_params = model.state_dict()
 
     for e in range(epochs):
         optim.zero_grad()
@@ -220,12 +227,15 @@ def fit(model, X, y, optim, loss_fn, epochs, reg, verbose=0):
             loss1 = loss
         loss1.backward()
         optim.step()
+        if min_loss is None or loss1 < min_loss:
+            best_params = deepcopy(model.state_dict())
         
         if verbose > 0 and e%verbose==0:
             if reg > 0:
                 print(f"epoch {e}: loss {loss.cpu().detach().numpy().mean()} + {f.cpu().detach().numpy()}")
             else:
                 print(f"epoch {e}: loss {loss.cpu().detach().numpy().mean()}")
+    return best_params
 
 def fit_dataset(model, dataset, optim, loss_fn, epochs, reg, device, batch_size=1, verbose=0):
     f = torch.zeros(1)

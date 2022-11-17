@@ -52,7 +52,7 @@ def visualize_fitted(Rs, result_spectral_shape, camspecs):
     cv2.imwrite(f'./filter_measurements/{image_dir}/generated/human_cnn_{ill_name}.png', (np.stack([rgb[...,2],rgb[...,1],rgb[...,0]], axis=-1) * 255).astype(np.uint8))
 
 if __name__ == '__main__':
-    image_dir = 'test_nikon_papers'
+    image_dir = 'test_nikon_ured'
     image_size = (512, 256)
     result_spectral_shape = SpectralShape(380, 780, 10)
     
@@ -64,7 +64,7 @@ if __name__ == '__main__':
     
 
     device = 'cuda:0'
-    n = 6
+    n = 3
     ridge = GaussianMixtureTorch(samples=target.shape[0], device=device, n=n)
     try:
         ridge.load_state_dict(torch.load(f'./filter_measurements/{image_dir}/ridge.model'))
@@ -77,10 +77,14 @@ if __name__ == '__main__':
     y = torch.tensor(target.astype(np.float32), requires_grad=True, device=device)
 
     cnn, get_Rs, name = create_DGcnn_fixed(target.shape[0], device, n, size, ridge)
+    try:
+        cnn.load_state_dict(torch.load(f'./filter_measurements/{image_dir}/{name}.model'))
+    except Exception:
+        pass
     # cnn, get_Rs, name = create_Rcnn(target.shape[0], device, len(result_spectral_shape), size, ridge)
     cnn.to(device)
 
-    o = torch.optim.Adam(params=cnn.parameters(), lr=0.001)
+    o = torch.optim.Adam(params=cnn.parameters(), lr=0.0001)
     l1 = torch.nn.MSELoss() 
     l2 = torch.nn.CosineSimilarity()
     def l(x,y):
@@ -90,8 +94,8 @@ if __name__ == '__main__':
 
     
     laplace_filter = laplace_filter.to(device)
-    fit(cnn, X, y, o, l, 20000, 0, verbose=100)
-    torch.save(cnn.state_dict(), f'./filter_measurements/{image_dir}/{name}.model')
+    best_params = fit(cnn, X, y, o, l, 5000, 0, verbose=100)
+    torch.save(best_params, f'./filter_measurements/{image_dir}/{name}.model')
 
     # cnn.load_state_dict(torch.load(f'./filter_measurements/{image_dir}/{name}.model'))
 

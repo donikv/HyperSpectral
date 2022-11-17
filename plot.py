@@ -74,7 +74,7 @@ if __name__ == '__main__':
     X = torch.tensor(IFScs_flat.astype(np.float32), requires_grad=True, device=device)
     y = torch.tensor(target.astype(np.float32), requires_grad=True, device=device)
 
-    cnn, get_Rs, name = create_Gcnn(target.shape[0], device, n, size, ridge)
+    cnn, get_Rs, name = create_DGcnn_fixed(target.shape[0], device, n, size, ridge)
     cnn.load_state_dict(torch.load(f'./filter_measurements/{image_dir}/{name}.model'))
     cnn.to(device)
 

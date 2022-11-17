@@ -56,6 +56,31 @@ def parse_camspec(lines):
             return out
     return out
 
+def inspect_regions(spectral_image, regions):
+    """
+    Regions: N x 4 x 2
+    """
+    top_left_xs, top_left_ys = np.min(regions[...,0], axis=-1), np.min(regions[...,1], axis=-1)
+    bottom_right_xs, bottom_right_ys = np.max(regions[...,0], axis=-1), np.max(regions[...,1], axis=-1)
+
+    avgs, stds = [], []
+    for i in range(regions.shape[0]):
+        tlx, tly, brx, bry = top_left_xs[i], top_left_ys[i], bottom_right_xs[i], bottom_right_ys[i]
+        region = spectral_image[tly:bry, tlx:brx]
+        avg = np.average(region, axis=(0,1))
+        std = np.std(region, axis=(0,1))
+        avgs.append(avg)
+        stds.append(std)
+
+    return np.array(avgs), np.array(stds), (top_left_xs, top_left_ys, bottom_right_xs, bottom_right_ys)
+    
+
+def load_regions(f):
+    regions = np.loadtxt(f, dtype=int)
+    regions = regions.reshape((regions.shape[0], -1, 2))
+    # regions = regions.transpose((0,2,1))
+    return regions
+
 class FilteredImageCollection():
     def __init__(self, images, filter_specs, camera_sensitivity, illumination) -> None:
         self.images = images
