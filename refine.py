@@ -52,7 +52,7 @@ def visualize_fitted(Rs, result_spectral_shape, camspecs):
     cv2.imwrite(f'./filter_measurements/{image_dir}/generated/human_cnn_{ill_name}.png', (np.stack([rgb[...,2],rgb[...,1],rgb[...,0]], axis=-1) * 255).astype(np.uint8))
 
 if __name__ == '__main__':
-    image_dir = 'test_nikon_ured'
+    image_dir = 'test_nikon_papers'
     image_size = (512, 256)
     result_spectral_shape = SpectralShape(380, 780, 10)
     
@@ -64,7 +64,7 @@ if __name__ == '__main__':
     
 
     device = 'cuda:0'
-    n = 3
+    n = 6
     ridge = GaussianMixtureTorch(samples=target.shape[0], device=device, n=n)
     try:
         ridge.load_state_dict(torch.load(f'./filter_measurements/{image_dir}/ridge.model'))
@@ -76,7 +76,7 @@ if __name__ == '__main__':
     X = torch.tensor(IFScs_flat.astype(np.float32), requires_grad=True, device=device)
     y = torch.tensor(target.astype(np.float32), requires_grad=True, device=device)
 
-    cnn, get_Rs, name = create_DGcnn_fixed(target.shape[0], device, n, size, ridge)
+    cnn, get_Rs, name = create_DGcnn_fixed(target.shape[0], device, n, size, ridge, reg=0.15)
     try:
         cnn.load_state_dict(torch.load(f'./filter_measurements/{image_dir}/{name}.model'))
     except Exception:
@@ -93,11 +93,10 @@ if __name__ == '__main__':
         return 0.1 * a.mean() + b
 
     
-    laplace_filter = laplace_filter.to(device)
-    best_params = fit(cnn, X, y, o, l, 5000, 0, verbose=100)
+    best_params = fit(cnn, X, y, o, l, 5000, 0.5, verbose=100)
     torch.save(best_params, f'./filter_measurements/{image_dir}/{name}.model')
 
-    # cnn.load_state_dict(torch.load(f'./filter_measurements/{image_dir}/{name}.model'))
+    cnn.load_state_dict(torch.load(f'./filter_measurements/{image_dir}/{name}.model'))
 
     Rs = get_Rs(X, y)
     visualize_fitted(Rs, result_spectral_shape, camspecs)

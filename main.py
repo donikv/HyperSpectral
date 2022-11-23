@@ -29,10 +29,9 @@ if __name__ == '__main__':
     X = torch.tensor(IFScs_flat.astype(np.float32), requires_grad=True, device=device)
     y = torch.tensor(target.astype(np.float32), requires_grad=True, device=device)
 
-    o = torch.optim.SGD(params=ridge.parameters(), lr=1)
+    o = torch.optim.Adam(params=ridge.parameters(), lr=1)
     l = torch.nn.MSELoss()
 
-    laplace_filter = laplace_filter.to(device)
     fit(ridge, X, y, o, l, 20000, 0, verbose=100)
 
     ridge.to('cpu')

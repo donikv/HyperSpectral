@@ -27,7 +27,7 @@ def visualize_fitted(Rs, result_spectral_shape, camspecs, model_name, image_dir)
 
     ills = colour.SDS_ILLUMINANTS
     ill_name = 'ISO 7589 Studio Tungsten'
-    camera_name = 'Human'
+    camera_name = 'Google_Pixel4'
     cmf = camspecs[camera_name].extrapolate(result_spectral_shape).interpolate(result_spectral_shape).to_sds()
 
     pth = f'./filter_measurements/{image_dir}/generated/{model_name}/{camera_name}'
@@ -64,10 +64,10 @@ if __name__ == '__main__':
     data = get_formated_data(collection=collection)
     IFScs_flat, target = data["x"], data["y"]
 
-    device = 'cuda:0'
+    device = 'cpu'
     n = 6
     ridge = GaussianMixtureTorch(samples=target.shape[0], device=device, n=n)
-    ridge.load_state_dict(torch.load(f'./filter_measurements/{image_dir}/ridge.model'))
+    ridge.load_state_dict(torch.load(f'./filter_measurements/{image_dir}/ridge.model', map_location=device))
     
     size = (image_size[1], image_size[0], target.shape[1])
 
@@ -75,7 +75,7 @@ if __name__ == '__main__':
     y = torch.tensor(target.astype(np.float32), requires_grad=True, device=device)
 
     cnn, get_Rs, name = create_DGcnn_fixed(target.shape[0], device, n, size, ridge)
-    cnn.load_state_dict(torch.load(f'./filter_measurements/{image_dir}/{name}.model'))
+    cnn.load_state_dict(torch.load(f'./filter_measurements/{image_dir}/{name}.model', map_location=device))
     cnn.to(device)
 
     Rs = get_Rs(X, y)

@@ -28,7 +28,7 @@ if __name__ == '__main__':
 
     device = 'cuda:0'
     n = 6
-    ridge = GaussianMixtureTorch(samples=target.shape[0], device=device, n=n)
+    ridge = GaussianMixtureTorch(samples=target.shape[0], device=device, n=6)
     ridge.load_state_dict(torch.load(f'./filter_measurements/{image_dir}/ridge.model'))
     
     size = (image_size[1], image_size[0], target.shape[1])
@@ -37,6 +37,7 @@ if __name__ == '__main__':
     y = torch.tensor(target.astype(np.float32), requires_grad=True, device=device)
 
     cnn, get_Rs, name = create_DGcnn_fixed(target.shape[0], device, n, size, ridge)
+    cnn.training = False
     cnn.load_state_dict(torch.load(f'./filter_measurements/{image_dir}/{name}.model'))
     cnn.to(device)
 
