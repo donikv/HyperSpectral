@@ -1,4 +1,5 @@
 import torch
+import colour
 from torch import nn
 from torch.nn.parameter import Parameter
 from torch.utils.data import DataLoader
@@ -206,7 +207,7 @@ class DirectGaussianCNNTorch(nn.Module):
             return self._normalize(mean), std, a
         else:
             mean, std, a = params[:,:n,:], params[:,n:2*n,:], params[:,2*n:,:]
-            self.regularization = (self.std_regularization - std)
+            self.regularization = torch.abs(self.std_regularization - std)
             return self._normalize(mean), std, a
     
     def _normalize(self,outmap):
@@ -222,7 +223,60 @@ class DirectGaussianCNNTorch(nn.Module):
         gm = torch.sum(gauss,dim=1).unsqueeze(-1)
         return gm, gauss
 
-def fit(model, X, y, optim, loss_fn, epochs, reg, verbose=0):
+class SRGBBasisCNNTorch(nn.Module):
+
+    def __init__(self, msds=colour.recovery.MSDS_BASIS_FUNCTIONS_sRGB_MALLETT2019, size=(256,512,45), fixed_means=False, device='cpu', std_regularization=0.1):
+        super(SRGBBasisCNNTorch, self).__init__()
+        ks = (5,5)
+
+        self.msds = msds.values
+        n = self.msds.shape[1]
+
+        self.out_channels = n
+        self.seq = nn.Sequential(
+            nn.Conv2d(size[-1], 128, kernel_size=ks, stride=(1,1), padding='same'),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(128, 256, kernel_size=(3,3), stride=(1,1), padding='same'),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(256, 128, kernel_size=(3,3), stride=(1,1), padding='same'),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(128, self.out_channels, kernel_size=(1,1), padding='same'),
+            nn.ReLU(inplace=True),
+        )
+        
+        self.device = device
+        self.size = size
+        self.n = n
+        self.regularization = torch.zeros(1, device=device)
+        self.std_regularization = std_regularization
+        self.msds = torch.tensor(self.msds, device=device, dtype=torch.float32)
+        self.msds = self.msds.transpose(1,0).unsqueeze(0)
+        self.training = True
+    
+    def forward(self, IFS, y_in):
+        gm, gauss = self.R(IFS, y_in)
+        y = IFS@gm
+        return y
+        # return {'output':y, 'regularization':gauss}
+    
+    def conv(self, x):
+        n = self.out_channels
+        x = x.reshape((1,*self.size)).permute(0, 3, 1, 2)
+        params = self.seq(x)
+        params = params.permute(0, 2, 3, 1).reshape((self.size[0]*self.size[1],self.out_channels,1))
+        
+        # b = 1 - torch.norm(params, dim=-2, keepdim=True)
+        # weights = torch.concat([params,b], dim=-2)
+        weights = params
+        return weights
+    
+    def R(self, IFS, x):
+        weights = self.conv(x)
+        gauss = weights * self.msds
+        gm = torch.sum(gauss,dim=1).unsqueeze(-1)
+        return gm, gauss
+
+def fit(model, X, y, optim, loss_fn, epochs, reg, verbose=0, save_best=True):
     f = torch.zeros(1)
     min_loss = None
     best_params = model.state_dict()
@@ -239,7 +293,7 @@ def fit(model, X, y, optim, loss_fn, epochs, reg, verbose=0):
             loss1 = loss
         loss1.backward()
         optim.step()
-        if min_loss is None or loss1 < min_loss:
+        if min_loss is None or loss1 < min_loss or not save_best:
             best_params = deepcopy(model.state_dict())
         
         if verbose > 0 and e%verbose==0:
@@ -275,21 +329,21 @@ def fit_dataset(model, dataset, optim, loss_fn, epochs, reg, device, batch_size=
                 else:
                     print(f"epoch {e}: loss {loss.cpu().detach().numpy().mean()}")
 
-def create_Gcnn(samples, device, n, size, ridge, reg=0.0):
+def create_Gcnn(samples, device, n, size, ridge, reg=0.0, basis=None):
     cnn = GaussianCNNTorch(samples=samples, device=device, n=n, size=size, init_params=ridge)
     def f(X,y):
         Rs, _ = cnn.R(X,y)
         return Rs
     return cnn, f, "gcnn"
 
-def create_DGcnn(samples, device, n, size, ridge, reg=0.0):
+def create_DGcnn(samples, device, n, size, ridge, reg=0.0, basis=None):
     cnn = DirectGaussianCNNTorch(device=device, n=n, size=size, std_regularization=reg)
     def f(X,y):
         Rs, _ = cnn.R(X,y)
         return Rs
     return cnn, f, "direct_gcnn"
 
-def create_DGcnn_fixed(samples, device, n, size, ridge, reg=0.0):
+def create_DGcnn_fixed(samples, device, n, size, ridge, reg=0.0, basis=None):
     cnn = DirectGaussianCNNTorch(device=device, n=n, size=size, fixed_means=True, std_regularization=reg)
     def f(X,y):
         cnn.training = False
@@ -298,7 +352,16 @@ def create_DGcnn_fixed(samples, device, n, size, ridge, reg=0.0):
         return Rs
     return cnn, f, "direct_gcnn_fixed"
 
-def create_Rcnn(samples, device, n, size, ridge, reg=0.0):
+def create_SRGBCNN(samples, device, n, size, ridge, reg=0.0, basis=colour.recovery.MSDS_BASIS_FUNCTIONS_sRGB_MALLETT2019):
+    cnn = SRGBBasisCNNTorch(device=device, msds=basis, size=size, fixed_means=True, std_regularization=reg)  # type: ignore
+    def f(X,y):
+        cnn.training = False
+        Rs, _ = cnn.R(X,y)
+        cnn.training = True
+        return Rs
+    return cnn, f, "srgb_basis_cnn"
+
+def create_Rcnn(samples, device, n, size, ridge, reg=0.0, basis=None):
     cnn = RefineCNN(samples=samples, device=device, n=n, size=size, init_params=ridge)
     def f(X,y):
         Rs = cnn.spds

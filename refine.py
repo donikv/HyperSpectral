@@ -52,7 +52,7 @@ def visualize_fitted(Rs, result_spectral_shape, camspecs):
     cv2.imwrite(f'./filter_measurements/{image_dir}/generated/human_cnn_{ill_name}.png', (np.stack([rgb[...,2],rgb[...,1],rgb[...,0]], axis=-1) * 255).astype(np.uint8))
 
 if __name__ == '__main__':
-    image_dir = 'test_nikon_papers'
+    image_dir = 'test_nikon_outdoors1'
     image_size = (512, 256)
     result_spectral_shape = SpectralShape(380, 780, 10)
     
@@ -76,7 +76,10 @@ if __name__ == '__main__':
     X = torch.tensor(IFScs_flat.astype(np.float32), requires_grad=True, device=device)
     y = torch.tensor(target.astype(np.float32), requires_grad=True, device=device)
 
-    cnn, get_Rs, name = create_DGcnn_fixed(target.shape[0], device, n, size, ridge, reg=0.15)
+    # basis = load_basis('./measurements/surfaces')
+    basis = colour.recovery.MSDS_BASIS_FUNCTIONS_sRGB_MALLETT2019
+    basis = basis.extrapolate(result_spectral_shape).interpolate(result_spectral_shape)
+    cnn, get_Rs, name = create_DGcnn_fixed(target.shape[0], device, n, size, ridge, reg=0.2, basis=basis)
     try:
         cnn.load_state_dict(torch.load(f'./filter_measurements/{image_dir}/{name}.model'))
     except Exception:
@@ -84,7 +87,7 @@ if __name__ == '__main__':
     # cnn, get_Rs, name = create_Rcnn(target.shape[0], device, len(result_spectral_shape), size, ridge)
     cnn.to(device)
 
-    o = torch.optim.Adam(params=cnn.parameters(), lr=0.0001)
+    o = torch.optim.Adam(params=cnn.parameters(), lr=0.001)
     l1 = torch.nn.MSELoss() 
     l2 = torch.nn.CosineSimilarity()
     def l(x,y):
@@ -93,7 +96,7 @@ if __name__ == '__main__':
         return 0.1 * a.mean() + b
 
     
-    best_params = fit(cnn, X, y, o, l, 5000, 0.5, verbose=100)
+    best_params = fit(cnn, X, y, o, l, 5000, 0.4, verbose=100, save_best=False)
     torch.save(best_params, f'./filter_measurements/{image_dir}/{name}.model')
 
     cnn.load_state_dict(torch.load(f'./filter_measurements/{image_dir}/{name}.model'))

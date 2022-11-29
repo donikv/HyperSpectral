@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 import colour
+import glob
 
 def load_png(file):
     img = cv2.imread(file, cv2.IMREAD_UNCHANGED)
@@ -80,6 +81,17 @@ def load_regions(f):
     regions = regions.reshape((regions.shape[0], -1, 2))
     # regions = regions.transpose((0,2,1))
     return regions
+
+def load_basis(d):
+    def load_spd(f):
+        spd = np.load(f, allow_pickle=True).item()
+        spd = colour.SpectralDistribution(spd)
+        return spd
+    files = glob.glob(f'{d}/*.npy')
+    spds = list(map(load_spd, files))
+    msds = colour.MultiSpectralDistributions(data=np.array([spd.values for spd in spds]).transpose(1,0), domain=spds[0].domain)
+    return msds
+
 
 class FilteredImageCollection():
     def __init__(self, images, filter_specs, camera_sensitivity, illumination) -> None:
