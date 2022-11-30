@@ -60,7 +60,7 @@ if __name__ == '__main__':
     camspecs = np.load('./filter_measurements/camspecs.npy', allow_pickle=True).item()
     mobile_camspecs = np.load('./filter_measurements/mobile_camspecs.npy', allow_pickle=True).item()
 
-    collection = get_images_filters_camera_and_illumination(image_dir, image_size, result_spectral_shape)
+    collection = get_images_filters_camera_and_illumination("./filter_measurements", image_dir, "./measurements/nikon_d7000.txt", image_size, result_spectral_shape)
     data = get_formated_data(collection=collection)
     IFScs_flat, target = data["x"], data["y"]
 

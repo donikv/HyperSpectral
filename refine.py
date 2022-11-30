@@ -56,7 +56,7 @@ if __name__ == '__main__':
     image_size = (512, 256)
     result_spectral_shape = SpectralShape(380, 780, 10)
     
-    collection = get_images_filters_camera_and_illumination(image_dir, image_size, result_spectral_shape)
+    collection = get_images_filters_camera_and_illumination("./filter_measurements", image_dir, "./measurements/nikon_d7000.txt", image_size, result_spectral_shape)
     data = get_formated_data(collection=collection)
     IFScs_flat, target = data["x"], data["y"]
 
@@ -96,7 +96,7 @@ if __name__ == '__main__':
         return 0.1 * a.mean() + b
 
     
-    best_params = fit(cnn, X, y, o, l, 5000, 0.4, verbose=100)
+    best_params = fit(cnn, X, y, o, l, 5000, 0.4, valid_loss=None, verbose=100)
     torch.save(best_params, f'./filter_measurements/{image_dir}/{name}.model')
 
     cnn.load_state_dict(torch.load(f'./filter_measurements/{image_dir}/{name}.model'))

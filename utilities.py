@@ -94,14 +94,14 @@ def load_basis(d):
     msds = colour.MultiSpectralDistributions(data=np.array([spd.values for spd in spds]).transpose(1,0), domain=spds[0].domain)
     return msds
 
-def save_experiment(folder, results):
-    date_time = datetime.now().strftime("%d%m%Y_%H%M%S")
-    save_folder = f'{folder}/{date_time}'
+def save_experiment(folder, results, unique=datetime.now().strftime("%d%m%Y_%H%M%S"), exp_name='experiment.npy'):
+    save_folder = f'{folder}/{unique}'
     os.makedirs(save_folder, exist_ok=True)
-    np.save(f'{save_folder}/experiment.npy', results)
+    np.save(f'{save_folder}/{exp_name}', results)
+    return save_folder
 
-def load_experiment(file):
-    exp = np.load(file)
+def load_experiment(file, exp_name='experiment.npy'):
+    exp = np.load(f'{file}/{exp_name}', allow_pickle=True)
     return exp.item()
 
 class FilteredImageCollection():

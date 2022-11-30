@@ -13,9 +13,10 @@ from utilities import *
 from models import *
 from loader import *
 from visualize import show, visualize_set_program
+import models
 visualize_set_program(os.path.basename(__file__))
 
-def visualize_fitted(Rs, result_spectral_shape, camspecs):
+def visualize_fitted(Rs, result_spectral_shape, camspecs, size, cwd, image_dir):
     Rs = Rs.cpu().detach().numpy()
     print(Rs.shape)
     R = SpectralDistribution(Rs[256*512 // 2, :, 0], [x for x in result_spectral_shape])
@@ -51,22 +52,14 @@ def visualize_fitted(Rs, result_spectral_shape, camspecs):
     rgb = (rgb.clip(0,1) ** (1/2.2))
     plt.imshow(rgb)
     show()
-    cv2.imwrite(f'./filter_measurements/{image_dir}/generated/human_cnn_{ill_name}.png', (np.stack([rgb[...,2],rgb[...,1],rgb[...,0]], axis=-1) * 255).astype(np.uint8))
+    cv2.imwrite(f'{cwd}/{image_dir}/generated/human_cnn_{ill_name}.png', (np.stack([rgb[...,2],rgb[...,1],rgb[...,0]], axis=-1) * 255).astype(np.uint8))
 
-if __name__ == '__main__':
-    n = int(sys.argv[1])
-    initial_lr = float(sys.argv[2])
-    lam = float(sys.argv[3])
-    std_reg = float(sys.argv[4])
-    reg_val = float(sys.argv[5])
-    device = sys.argv[6]
-    image_dir = sys.argv[7]
-
+def main(model_fn, n, initial_lr, lam, std_reg, reg_val, device, num_epochs, cwd, image_dir, camera_sensitivity_path, load_from, run_params):
     # image_dir = 'test_nikon_outdoors1'
     image_size = (512, 256)
     result_spectral_shape = SpectralShape(380, 780, 10)
     
-    collection = get_images_filters_camera_and_illumination(image_dir, image_size, result_spectral_shape)
+    collection = get_images_filters_camera_and_illumination(cwd, image_dir, camera_sensitivity_path, image_size, result_spectral_shape)
 
     valid_names = ['transparent_h', 'day_3', 'night_3']
     train_names = list(filter(lambda x: x not in valid_names, collection.images.keys()))
@@ -80,10 +73,9 @@ if __name__ == '__main__':
     data = get_formated_data(collection=valid_collection)
     valid_IFScs_flat, valid_target = data["x"], data["y"]
 
-    camspecs = np.load('./filter_measurements/camspecs.npy', allow_pickle=True).item()
+    camspecs = np.load(f'{cwd}/camspecs.npy', allow_pickle=True).item()
     
     device = f'cuda:{device}'
-    n = 6
     size = (image_size[1], image_size[0], target.shape[1])
 
     X = torch.tensor(IFScs_flat.astype(np.float32), requires_grad=True, device=device)
@@ -92,14 +84,13 @@ if __name__ == '__main__':
     X_valid = torch.tensor(valid_IFScs_flat.astype(np.float32), requires_grad=True, device=device)
     y_valid = torch.tensor(valid_target.astype(np.float32), requires_grad=True, device=device)
 
-    # basis = load_basis('./measurements/surfaces')
     basis = colour.recovery.MSDS_BASIS_FUNCTIONS_sRGB_MALLETT2019
     basis = basis.extrapolate(result_spectral_shape).interpolate(result_spectral_shape)
-    cnn, get_Rs, name = create_DGcnn_fixed(target.shape[0], device, n, size, None, reg=std_reg, basis=basis)
-    try:
-        cnn.load_state_dict(torch.load(f'./filter_measurements/{image_dir}/{name}.model'))
-    except Exception:
-        pass
+    cnn, get_Rs, name = model_fn(target.shape[0], device, n, size, None, reg=std_reg, basis=basis)
+    save_folder = f'{cwd}/{image_dir}/{name}'
+    if load_from:
+        exp = load_experiment(load_from)
+        cnn.load_state_dict(exp['p'])
     cnn.to(device)
 
     o = torch.optim.Adam(params=cnn.parameters(), lr=initial_lr)
@@ -109,17 +100,44 @@ if __name__ == '__main__':
         a = 1 - l2(x,y)
         b = l1(x,y)
         return lam * a.mean() + b
+    def vl(x,y):
+        a = torch.arccos(l2(x,y))
+        return a.mean() * 180 / 3.14
 
-    params, best_params, train_losses, valid_losses = fit(cnn, X, y, o, l, 5000, reg_val, verbose=100, X_valid=X_valid, y_valid=y_valid, validate=True) 
+    params, best_params, train_losses, valid_losses = fit(cnn, X, y, o, l, num_epochs, reg_val, valid_loss=vl, verbose=100, X_valid=X_valid, y_valid=y_valid, validate=True) 
 
-    save_folder = f'./filter_measurements/{image_dir}/{name}'
     os.makedirs(save_folder, exist_ok=True)
-    save_experiment(save_folder, {"p": params, "bp":best_params, "tl":train_losses, "vl":valid_losses})
+    run_params = f'{n}_{initial_lr}_{lam}_{std_reg}_{reg_val}'
+    experiment_data = {"p": params, "bp":best_params, "tl":train_losses, "vl":valid_losses, "run":run_params}
+    saved_experiment = save_experiment(save_folder, experiment_data)
 
     torch.save(best_params, f'{save_folder}/best.model')
-    torch.save(params, f'{save_folder}/{name}.model')
-
-    cnn.load_state_dict(torch.load(f'./filter_measurements/{image_dir}/{name}.model'))
+    torch.save(params, f'{save_folder}/final.model')
 
     Rs = get_Rs(X, y)
-    visualize_fitted(Rs, result_spectral_shape, camspecs)
+    visualize_fitted(Rs, result_spectral_shape, camspecs, size, cwd, image_dir)
+    
+    exp = load_experiment(saved_experiment)
+    cnn.load_state_dict(exp['bp'])
+
+    Rs = get_Rs(X, y)
+    visualize_fitted(Rs, result_spectral_shape, camspecs, size, cwd, image_dir)
+    return experiment_data
+
+
+if __name__ == '__main__':
+    args = {}
+    args['cwd'] = sys.argv[1]
+    args['image_dir'] = sys.argv[2]
+    args['camera_sensitivity_path'] = sys.argv[3]
+    args['model_fn'] = getattr(models, sys.argv[4])
+    args['n'] = int(sys.argv[5])
+    args['initial_lr'] = float(sys.argv[6])
+    args['lam'] = float(sys.argv[7])
+    args['std_reg'] = float(sys.argv[8])
+    args['reg_val'] = float(sys.argv[9])
+    args['num_epochs'] = int(sys.argv[10])
+    args['device'] = sys.argv[11]
+    args['load_from'] = sys.argv[12]
+
+    main(**args, run_params=args)

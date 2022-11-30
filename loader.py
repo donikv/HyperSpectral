@@ -5,14 +5,14 @@ from utilities import *
 from torch.utils.data import Dataset
 import torch
 
-def get_images_filters_camera_and_illumination(image_dir, image_size, result_spectral_shape) -> FilteredImageCollection:
-    filtered_directory = f'./filter_measurements/{image_dir}/filtered/'
+def get_images_filters_camera_and_illumination(cwd, image_dir, camera_sensitivity_path, image_size, result_spectral_shape) -> FilteredImageCollection:
+    filtered_directory = f'{cwd}/{image_dir}/filtered/'
     image_names = os.listdir(filtered_directory)
     filtered_names = list(filter(lambda f: not f.startswith('original') and not f.startswith('.'), image_names))
     filtered_names = [os.path.splitext(x)[0] for x in filtered_names]
 
-    illumination = load_spec(f'./filter_measurements/{image_dir}/light.npy')
-    camera_sensitivity = load_camera_spec('./measurements/nikon_d7000.txt')
+    illumination = load_spec(f'{cwd}/{image_dir}/light.npy')
+    camera_sensitivity = load_camera_spec(camera_sensitivity_path)
     
     illumination = illumination.extrapolate(result_spectral_shape)
     illumination = illumination.interpolate(result_spectral_shape)
@@ -27,7 +27,7 @@ def get_images_filters_camera_and_illumination(image_dir, image_size, result_spe
         image = load_png(filtered_directory+image_name+'.png')
         image = cv2.resize(image, image_size)
         images[image_name] = image
-        filter_spec = load_spec(f'./filter_measurements/set1/{image_name}/final.npy')
+        filter_spec = load_spec(f'{cwd}/set1/{image_name}/final.npy')
         filter_spec = filter_spec.extrapolate(result_spectral_shape)
         filter_spec = filter_spec.interpolate(result_spectral_shape)
         filter_specs[image_name] = filter_spec
