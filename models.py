@@ -276,9 +276,11 @@ class SRGBBasisCNNTorch(nn.Module):
         gm = torch.sum(gauss,dim=1).unsqueeze(-1)
         return gm, gauss
 
-def fit(model, X, y, optim, loss_fn, epochs, reg, verbose=0, save_best=True):
+def fit(model, X, y, optim, loss_fn, epochs, reg, X_valid=None, y_valid=None, validate=False, verbose=0):
     f = torch.zeros(1)
     min_loss = None
+    train_losses = []
+    valid_losses = []
     best_params = model.state_dict()
 
     for e in range(epochs):
@@ -293,7 +295,18 @@ def fit(model, X, y, optim, loss_fn, epochs, reg, verbose=0, save_best=True):
             loss1 = loss
         loss1.backward()
         optim.step()
-        if min_loss is None or loss1 < min_loss or not save_best:
+        train_losses.append(loss1.detach().cpu().item())
+        if validate:
+            ygm = model(X_valid, y)
+            loss = loss_fn(ygm, y_valid)
+            if reg > 0:
+                f = model.regularization.mean()
+                loss1 = loss + reg * f
+            else: 
+                loss1 = loss
+            valid_losses.append(loss1.detach().cpu().item())
+
+        if min_loss is None or loss1 < min_loss:
             best_params = deepcopy(model.state_dict())
         
         if verbose > 0 and e%verbose==0:
@@ -301,7 +314,7 @@ def fit(model, X, y, optim, loss_fn, epochs, reg, verbose=0, save_best=True):
                 print(f"epoch {e}: loss {loss.cpu().detach().numpy().mean()} + {f.cpu().detach().numpy()}")
             else:
                 print(f"epoch {e}: loss {loss.cpu().detach().numpy().mean()}")
-    return best_params
+    return model.state_dict(), best_params, train_losses, valid_losses
 
 def fit_dataset(model, dataset, optim, loss_fn, epochs, reg, device, batch_size=1, verbose=0):
     f = torch.zeros(1)

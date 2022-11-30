@@ -40,7 +40,7 @@ if __name__ == '__main__':
     basis = colour.recovery.MSDS_BASIS_FUNCTIONS_sRGB_MALLETT2019
     basis = basis.extrapolate(result_spectral_shape).interpolate(result_spectral_shape)
     
-    cnn, get_Rs, name = create_SRGBCNN(target.shape[0], device, n, size, ridge, reg=0.2, basis=basis)
+    cnn, get_Rs, name = create_DGcnn_fixed(target.shape[0], device, n, size, ridge, reg=0.2, basis=basis)
     cnn.training = False
     cnn.load_state_dict(torch.load(f'./filter_measurements/{image_dir}/{name}.model'))
     cnn.to(device)

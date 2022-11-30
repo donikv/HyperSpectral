@@ -27,7 +27,7 @@ def visualize_fitted(Rs, result_spectral_shape, camspecs, model_name, image_dir)
 
     ills = colour.SDS_ILLUMINANTS
     ill_name = 'ISO 7589 Studio Tungsten'
-    camera_name = 'Human'
+    camera_name = 'iPhone8'
     cmf = camspecs[camera_name].extrapolate(result_spectral_shape).interpolate(result_spectral_shape).to_sds()
 
     pth = f'./filter_measurements/{image_dir}/generated/{model_name}/{camera_name}'
@@ -53,7 +53,7 @@ def visualize_fitted(Rs, result_spectral_shape, camspecs, model_name, image_dir)
         cv2.imwrite(f'./filter_measurements/{image_dir}/generated/{model_name}/{camera_name}/cnn_{ill_name}.png', (np.stack([rgb[...,2],rgb[...,1],rgb[...,0]], axis=-1) * 255).astype(np.uint8))
 
 if __name__ == '__main__':
-    image_dir = 'test_nikon_papers'
+    image_dir = 'test_nikon_outdoors1'
     image_size = (512, 256)
     result_spectral_shape = SpectralShape(380, 780, 10)
     
@@ -78,7 +78,7 @@ if __name__ == '__main__':
     basis = colour.recovery.MSDS_BASIS_FUNCTIONS_sRGB_MALLETT2019
     basis = basis.extrapolate(result_spectral_shape).interpolate(result_spectral_shape)
     
-    cnn, get_Rs, name = create_SRGBCNN(target.shape[0], device, n, size, ridge, reg=0.2, basis=basis)
+    cnn, get_Rs, name = create_DGcnn_fixed(target.shape[0], device, n, size, ridge, reg=0.2, basis=basis)
     cnn.load_state_dict(torch.load(f'./filter_measurements/{image_dir}/{name}.model', map_location=device))
     cnn.to(device)
 

@@ -96,7 +96,7 @@ if __name__ == '__main__':
         return 0.1 * a.mean() + b
 
     
-    best_params = fit(cnn, X, y, o, l, 5000, 0.4, verbose=100, save_best=False)
+    best_params = fit(cnn, X, y, o, l, 5000, 0.4, verbose=100)
     torch.save(best_params, f'./filter_measurements/{image_dir}/{name}.model')
 
     cnn.load_state_dict(torch.load(f'./filter_measurements/{image_dir}/{name}.model'))

@@ -2,6 +2,8 @@ import cv2
 import numpy as np
 import colour
 import glob
+import os
+from datetime import datetime
 
 def load_png(file):
     img = cv2.imread(file, cv2.IMREAD_UNCHANGED)
@@ -92,6 +94,15 @@ def load_basis(d):
     msds = colour.MultiSpectralDistributions(data=np.array([spd.values for spd in spds]).transpose(1,0), domain=spds[0].domain)
     return msds
 
+def save_experiment(folder, results):
+    date_time = datetime.now().strftime("%d%m%Y_%H%M%S")
+    save_folder = f'{folder}/{date_time}'
+    os.makedirs(save_folder, exist_ok=True)
+    np.save(f'{save_folder}/experiment.npy', results)
+
+def load_experiment(file):
+    exp = np.load(file)
+    return exp.item()
 
 class FilteredImageCollection():
     def __init__(self, images, filter_specs, camera_sensitivity, illumination) -> None:
@@ -99,3 +110,14 @@ class FilteredImageCollection():
         self.filter_specs = filter_specs
         self.camera_sensitivity = camera_sensitivity
         self.illumination = illumination
+        
+    def __len__(self):
+        return len(self.images)
+    
+    def get_subset(self, image_names):
+        images = {}
+        filter_specs = {}
+        for image_name in image_names:
+            images[image_name] = self.images[image_name]
+            filter_specs[image_name] = self.filter_specs[image_name]
+        return FilteredImageCollection(images, filter_specs, self.camera_sensitivity, self.illumination)

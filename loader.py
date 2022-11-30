@@ -26,7 +26,6 @@ def get_images_filters_camera_and_illumination(image_dir, image_size, result_spe
     for image_name in filtered_names:
         image = load_png(filtered_directory+image_name+'.png')
         image = cv2.resize(image, image_size)
-        # image = np.clip(image ** 0.8, 0, 1)
         images[image_name] = image
         filter_spec = load_spec(f'./filter_measurements/set1/{image_name}/final.npy')
         filter_spec = filter_spec.extrapolate(result_spectral_shape)
@@ -56,13 +55,50 @@ def get_formated_data(collection: FilteredImageCollection):
         IFScs.append(IFS[image_name]) # img_names x 3 x N
     IFScs = np.array(IFScs)
     imgs = np.array(imgs)
-    IFScs_flat = IFScs.transpose((1,0,2)).reshape((-1, IFScs.shape[-1])) # 1 x 3 * img_names x N
-    IFScs_flat = np.expand_dims(IFScs_flat, 0)
+    IFScs_flat = IFScs.transpose((1,0,2)).reshape((-1, IFScs.shape[-1])) # 3 * img_names x N
+    IFScs_flat = np.expand_dims(IFScs_flat, 0) # 1 x 3 * img_names x N
     imgs_flat = imgs.reshape(imgs.shape[0], -1, imgs.shape[-1]).transpose((1,2,0)) # hw x 3 x img_names
     target = imgs_flat.reshape((imgs_flat.shape[0],-1, 1)) # hw x 3 * img_names, [[c1,c1,c1...,c2,c2,c2...,c3,c3,c3...], ...]
     IFScs_flat = np.tile(IFScs_flat, (target.shape[0], 1, 1))
 
     return {"x":IFScs_flat, "y":target}
+
+# def get_formated_validation_data(collection: FilteredImageCollection):
+#     images = collection.images
+#     filter_specs = collection.filter_specs
+#     camera_sensitivity = collection.camera_sensitivity
+#     illumination = collection.illumination
+
+#     IS = {}
+#     for image_name in images.keys():
+#         IScs = []
+#         for c in (0,1,2):
+#             ISc = camera_sensitivity[c] * illumination
+#             IScs.append(ISc.values)
+#         IS[image_name] = np.array(IScs) # 3xN N=41
+
+#     IFS = {}
+#     for image_name in images.keys():
+#         IFScs = []
+#         IFSc = filter_specs[image_name]
+#         IFScs.append(IFSc.values)
+#         IFS[image_name] = np.array(IFScs) # 3xN N=41
+
+#     imgs = []
+#     IFScs = []
+#     IScs
+#     for image_name in images.keys():
+#         imgs.append(images[image_name]) # img_names x h x w x 3
+#         IFScs.append(IFS[image_name]) # img_names x 1 x N
+#     IFScs = np.array(IFScs)
+#     imgs = np.array(imgs)
+#     IFScs_flat = IFScs.transpose((1,0,2)).reshape((-1, IFScs.shape[-1])) # 1 * img_names x N
+#     IFScs_flat = np.expand_dims(IFScs_flat, 0) # 1 x 1 * img_names x N
+#     imgs_flat = imgs.reshape(imgs.shape[0], -1, imgs.shape[-1]).transpose((1,2,0)) # hw x 3 x img_names
+#     target = imgs_flat.reshape((imgs_flat.shape[0],-1, 1)) # hw x 3 * img_names, [[c1,c1,c1...,c2,c2,c2...,c3,c3,c3...], ...]
+#     IFScs_flat = np.tile(IFScs_flat, (target.shape[0], 1, 1))
+
+#     return {"x":IFScs_flat, "y":target}
 
 class SequentialDataset(Dataset):
     def __init__(self, IFScs_flat, target, device='cpu') -> None:
