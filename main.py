@@ -9,11 +9,11 @@ from scipy.ndimage import median_filter
 from skimage.filters.rank import mean, median, minimum
 import matplotlib.pyplot as plt
 from colour.colorimetry import SpectralDistribution, MultiSpectralDistributions, SpectralShape
-from utilities import *
-from models import *
-from loader import *
-from visualize import show, visualize_set_program
-import models
+from filter_measurment.utilities import *
+from filter_measurment.models import *
+from filter_measurment.loader import *
+from filter_measurment.visualize import show, visualize_set_program
+import filter_measurment.models as models
 visualize_set_program(os.path.basename(__file__))
 
 def visualize_fitted(Rs, result_spectral_shape, camspecs, size, cwd, image_dir):
@@ -52,6 +52,7 @@ def visualize_fitted(Rs, result_spectral_shape, camspecs, size, cwd, image_dir):
     rgb = (rgb.clip(0,1) ** (1/2.2))
     plt.imshow(rgb)
     show()
+    plt.figure()
     cv2.imwrite(f'{cwd}/{image_dir}/generated/human_cnn_{ill_name}.png', (np.stack([rgb[...,2],rgb[...,1],rgb[...,0]], axis=-1) * 255).astype(np.uint8))
 
 def main(model_fn, n, initial_lr, lam, std_reg, reg_val, device, num_epochs, cwd, image_dir, camera_sensitivity_path, load_from, run_params):
@@ -86,9 +87,10 @@ def main(model_fn, n, initial_lr, lam, std_reg, reg_val, device, num_epochs, cwd
 
     basis = colour.recovery.MSDS_BASIS_FUNCTIONS_sRGB_MALLETT2019
     basis = basis.extrapolate(result_spectral_shape).interpolate(result_spectral_shape)
-    cnn, get_Rs, name = model_fn(target.shape[0], device, n, size, None, reg=std_reg, basis=basis)
+    model_fn = getattr(models, model_fn)
+    cnn, get_Rs, name = model_fn(target.shape[0], device, n, size, None, reg=std_reg, basis=result_spectral_shape)
     save_folder = f'{cwd}/{image_dir}/{name}'
-    if load_from:
+    if load_from != "":
         exp = load_experiment(load_from)
         cnn.load_state_dict(exp['p'])
     cnn.to(device)
@@ -104,10 +106,10 @@ def main(model_fn, n, initial_lr, lam, std_reg, reg_val, device, num_epochs, cwd
         a = torch.arccos(l2(x,y))
         return a.mean() * 180 / 3.14
 
-    params, best_params, train_losses, valid_losses = fit(cnn, X, y, o, l, num_epochs, reg_val, valid_loss=vl, verbose=100, X_valid=X_valid, y_valid=y_valid, validate=True) 
+    params, best_params, train_losses, valid_losses = fit(cnn, X, y, o, l, num_epochs, reg_val, valid_loss=vl, verbose=10, X_valid=X_valid, y_valid=y_valid, validate=True) 
 
     os.makedirs(save_folder, exist_ok=True)
-    run_params = f'{n}_{initial_lr}_{lam}_{std_reg}_{reg_val}'
+    # run_params = f'{n}_{initial_lr}_{lam}_{std_reg}_{reg_val}'
     experiment_data = {"p": params, "bp":best_params, "tl":train_losses, "vl":valid_losses, "run":run_params}
     saved_experiment = save_experiment(save_folder, experiment_data)
 
@@ -130,14 +132,15 @@ if __name__ == '__main__':
     args['cwd'] = sys.argv[1]
     args['image_dir'] = sys.argv[2]
     args['camera_sensitivity_path'] = sys.argv[3]
-    args['model_fn'] = getattr(models, sys.argv[4])
-    args['n'] = int(sys.argv[5])
-    args['initial_lr'] = float(sys.argv[6])
-    args['lam'] = float(sys.argv[7])
-    args['std_reg'] = float(sys.argv[8])
-    args['reg_val'] = float(sys.argv[9])
-    args['num_epochs'] = int(sys.argv[10])
-    args['device'] = sys.argv[11]
-    args['load_from'] = sys.argv[12]
+    args['load_from'] = sys.argv[4]
+    args['model_fn'] = sys.argv[5]
+    args['n'] = int(sys.argv[6])
+    args['initial_lr'] = float(sys.argv[7])
+    args['lam'] = float(sys.argv[8])
+    args['std_reg'] = float(sys.argv[9])
+    args['reg_val'] = float(sys.argv[10])
+    args['num_epochs'] = int(sys.argv[11])
+    args['device'] = sys.argv[12]
+
 
     main(**args, run_params=args)

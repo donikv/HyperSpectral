@@ -5,6 +5,7 @@ from torch.nn.parameter import Parameter
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from copy import deepcopy
+from filter_measurment.utilities import load_basis
 
 ln = 3
 __laplace_filter = -1 * torch.ones([ln])
@@ -225,7 +226,7 @@ class DirectGaussianCNNTorch(nn.Module):
 
 class SRGBBasisCNNTorch(nn.Module):
 
-    def __init__(self, msds=colour.recovery.MSDS_BASIS_FUNCTIONS_sRGB_MALLETT2019, size=(256,512,45), fixed_means=False, device='cpu', std_regularization=0.1):
+    def __init__(self, msds=colour.recovery.MSDS_BASIS_FUNCTIONS_sRGB_MALLETT2019, size=(256,512,45), fixed_means=False, device='cpu', l2_regularization=0.1):
         super(SRGBBasisCNNTorch, self).__init__()
         ks = (5,5)
 
@@ -248,7 +249,7 @@ class SRGBBasisCNNTorch(nn.Module):
         self.size = size
         self.n = n
         self.regularization = torch.zeros(1, device=device)
-        self.std_regularization = std_regularization
+        self.l2_regularization = l2_regularization
         self.msds = torch.tensor(self.msds, device=device, dtype=torch.float32)
         self.msds = self.msds.transpose(1,0).unsqueeze(0)
         self.training = True
@@ -263,10 +264,11 @@ class SRGBBasisCNNTorch(nn.Module):
         n = self.out_channels
         x = x.reshape((1,*self.size)).permute(0, 3, 1, 2)
         params = self.seq(x)
-        params = params.permute(0, 2, 3, 1).reshape((self.size[0]*self.size[1],self.out_channels,1))
+        params = params.permute(0, 2, 3, 1).reshape((self.size[0]*self.size[1],n,1))
         
         # b = 1 - torch.norm(params, dim=-2, keepdim=True)
         # weights = torch.concat([params,b], dim=-2)
+        self.regularization = torch.abs(self.l2_regularization - torch.norm(params, dim=-2).mean())
         weights = params
         return weights
     
@@ -283,7 +285,8 @@ def fit(model, X, y, optim, loss_fn, epochs, reg, valid_loss, X_valid=None, y_va
     valid_losses = []
     best_params = model.state_dict()
 
-    for e in range(epochs):
+    pbar = tqdm(range(epochs), total=epochs)
+    for e in pbar:
         optim.zero_grad()
         ygm = model(X, y)
         
@@ -306,9 +309,11 @@ def fit(model, X, y, optim, loss_fn, epochs, reg, valid_loss, X_valid=None, y_va
         
         if verbose > 0 and e%verbose==0:
             if reg > 0:
-                print(f"epoch {e}: loss {loss.cpu().detach().numpy().mean()} + {f.cpu().detach().numpy()} loss1 {loss1.cpu().detach().numpy().mean()}")
+                pbar.set_postfix({"epoch":e, "loss": f"{loss.cpu().detach().numpy().mean()} + {f.cpu().detach().numpy()}", "loss1": loss1.cpu().detach().numpy().mean()}) 
+                #print(f"epoch {e}: loss {loss.cpu().detach().numpy().mean()} + {f.cpu().detach().numpy()} loss1 {loss1.cpu().detach().numpy().mean()}")
             else:
-                print(f"epoch {e}: loss {loss.cpu().detach().numpy().mean()}")
+                pbar.set_postfix({"epoch":e, "loss": f"{loss.cpu().detach().numpy().mean()}", "loss1": loss1.cpu().detach().numpy().mean()})
+                # print(f"epoch {e}: loss {loss.cpu().detach().numpy().mean()}")
     return model.state_dict(), best_params, train_losses, valid_losses
 
 def fit_dataset(model, dataset, optim, loss_fn, epochs, reg, device, batch_size=1, verbose=0):
@@ -360,14 +365,36 @@ def create_DGcnn_fixed(samples, device, n, size, ridge, reg=0.0, basis=None):
         return Rs
     return cnn, f, "direct_gcnn_fixed"
 
-def create_SRGBCNN(samples, device, n, size, ridge, reg=0.0, basis=colour.recovery.MSDS_BASIS_FUNCTIONS_sRGB_MALLETT2019):
-    cnn = SRGBBasisCNNTorch(device=device, msds=basis, size=size, fixed_means=True, std_regularization=reg)  # type: ignore
+def create_SRGBCNN_Mallett(samples, device, n, size, ridge, reg=0.0, basis=colour.SpectralShape(380, 780, 10)):
+    basis_fns=colour.recovery.MSDS_BASIS_FUNCTIONS_sRGB_MALLETT2019
+    basis = basis_fns.extrapolate(basis).interpolate(basis)
+    cnn = SRGBBasisCNNTorch(device=device, msds=basis, size=size, fixed_means=True, l2_regularization=reg)  # type: ignore
     def f(X,y):
         cnn.training = False
         Rs, _ = cnn.R(X,y)
         cnn.training = True
         return Rs
-    return cnn, f, "srgb_basis_cnn"
+    return cnn, f, "srgb_basis_cnn_mallett"
+
+def create_SRGBCNN_Paper(samples, device, n, size, ridge, reg=0.0, basis=colour.SpectralShape(380, 780, 10)):
+    basis_fns=load_basis('./measurements/surfaces')
+    basis = basis_fns.extrapolate(basis).interpolate(basis)
+    cnn = SRGBBasisCNNTorch(device=device, msds=basis, size=size, fixed_means=True, l2_regularization=reg)  # type: ignore
+    def f(X,y):
+        cnn.training = False
+        Rs, _ = cnn.R(X,y)
+        cnn.training = True
+        return Rs
+    return cnn, f, "srgb_basis_cnn_paper"
+
+def create_SRGBCNN_Munsell(samples, device, n, size, ridge, reg=0.0, basis=None):
+    cnn = SRGBBasisCNNTorch(device=device, msds=basis, size=size, fixed_means=True, l2_regularization=reg)  # type: ignore
+    def f(X,y):
+        cnn.training = False
+        Rs, _ = cnn.R(X,y)
+        cnn.training = True
+        return Rs
+    return cnn, f, "srgb_basis_cnn_munsell"
 
 def create_Rcnn(samples, device, n, size, ridge, reg=0.0, basis=None):
     cnn = RefineCNN(samples=samples, device=device, n=n, size=size, init_params=ridge)
