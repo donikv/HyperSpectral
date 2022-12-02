@@ -3,15 +3,17 @@ import colour
 from torch import nn
 from torch.nn.parameter import Parameter
 from torch.utils.data import DataLoader
+import numpy as np
 from tqdm import tqdm
 from copy import deepcopy
-from filter_measurment.utilities import load_basis
+from utilities import load_basis
 
-ln = 3
-__laplace_filter = -1 * torch.ones([ln])
-__laplace_filter[ln // 2] = -1 * __laplace_filter[ln // 2] * (ln - 1)
-__laplace_filter = __laplace_filter / ln
-__laplace_filter = __laplace_filter.unsqueeze(0).unsqueeze(0)
+
+# ln = 3
+# __laplace_filter = -1 * torch.ones([ln])
+# __laplace_filter[ln // 2] = -1 * __laplace_filter[ln // 2] * (ln - 1)
+# __laplace_filter = __laplace_filter / ln
+# __laplace_filter = __laplace_filter.unsqueeze(0).unsqueeze(0)
         
 class RidgeTorch(nn.Module):
     def __init__(self, samples, n=41, device='cpu'):
@@ -163,7 +165,29 @@ class RefineCNN(nn.Module):
         gm = torch.sum(gauss,dim=1).unsqueeze(-1)
         return gm, gauss
 
-class DirectGaussianCNNTorch(nn.Module):
+def create_backbone(network_size, size, ks, out_channels):
+    if network_size == 'big':
+        return nn.Sequential(
+            nn.Conv2d(size[-1], 128, kernel_size=ks, stride=(1,1), padding='same'),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(128, 256, kernel_size=(3,3), stride=(1,1), padding='same'),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(256, 128, kernel_size=(3,3), stride=(1,1), padding='same'),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(128, out_channels, kernel_size=(1,1), padding='same'),
+            nn.ReLU(inplace=True),
+        )
+    else:
+        return nn.Sequential(
+            nn.Conv2d(size[-1], 128, kernel_size=ks, stride=(1,1), padding='same'),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(128, 64, kernel_size=(3,3), stride=(1,1), padding='same'),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(64, out_channels, kernel_size=(1,1), padding='same'),
+            nn.ReLU(inplace=True),
+        )  
+
+
 
     def __init__(self, n=10, size=(256,512,45), fixed_means=False, device='cpu', std_regularization=0.1):
         super(DirectGaussianCNNTorch, self).__init__()
@@ -224,9 +248,60 @@ class DirectGaussianCNNTorch(nn.Module):
         gm = torch.sum(gauss,dim=1).unsqueeze(-1)
         return gm, gauss
 
+class DirectGaussianCNNTorch(nn.Module):
+
+    def __init__(self, n=10, size=(256,512,45), fixed_means=False, device='cpu', std_regularization=0.1, network_size='big'):
+        super(DirectGaussianCNNTorch, self).__init__()
+        ks = (5,5)
+        self.out_channels = 2*n if fixed_means else 3*n
+        self.seq = create_backbone(network_size, size, ks, self.out_channels)
+        
+        self.device = device
+        self.size = size
+        self.n = n
+        self.means = torch.linspace(0, 1, n, device=device) if fixed_means else None
+        self.training = True
+        self.regularization = torch.zeros(1, device=device)
+        self.std_regularization = std_regularization
+    
+    def forward(self, IFS, y_in):
+        gm, gauss = self.R(IFS, y_in)
+        y = IFS@gm
+        return y
+    
+    def conv(self, x):
+        n = self.n
+        x = x.reshape((1,*self.size)).permute(0, 3, 1, 2)
+        params = self.seq(x)
+        params = params.permute(0, 2, 3, 1).reshape((self.size[0]*self.size[1],self.out_channels,1))
+        if self.means is not None:
+            std, a = params[:,:n,:], params[:,n:,:]
+            mean = self.means.unsqueeze(0).unsqueeze(-1).tile((std.shape[0],1,1))
+            if self.training:
+                mean = mean + torch.normal(torch.zeros_like(mean), torch.zeros_like(mean) + 0.01)
+                self.regularization = torch.abs(self.std_regularization - std)
+            return self._normalize(mean), std, a
+        else:
+            mean, std, a = params[:,:n,:], params[:,n:2*n,:], params[:,2*n:,:]
+            self.regularization = torch.abs(self.std_regularization - std)
+            return self._normalize(mean), std, a
+    
+    def _normalize(self,outmap):
+        outmap_min, _ = torch.min(outmap, dim=1, keepdim=True)
+        outmap_max, _ = torch.max(outmap, dim=1, keepdim=True)
+        outmap = (outmap - outmap_min) / (outmap_max - outmap_min + 1e-7)
+        return outmap
+    
+    def R(self, IFS, x):
+        mean, std, a = self.conv(x)
+        x = torch.linspace(0, 1, IFS.shape[-1], device=self.device).unsqueeze(0).unsqueeze(0).tile((mean.shape[0],mean.shape[1],1))
+        gauss = torch.abs(a) * torch.exp(-(x-(mean))**2/(2 * (std)**2 + 1e-4))
+        gm = torch.sum(gauss,dim=1).unsqueeze(-1)
+        return gm, gauss
+
 class SRGBBasisCNNTorch(nn.Module):
 
-    def __init__(self, msds=colour.recovery.MSDS_BASIS_FUNCTIONS_sRGB_MALLETT2019, size=(256,512,45), fixed_means=False, device='cpu', l2_regularization=0.1):
+    def __init__(self, msds=colour.recovery.MSDS_BASIS_FUNCTIONS_sRGB_MALLETT2019, size=(256,512,45), fixed_means=False, device='cpu', l2_regularization=0.1, network_size='big'):
         super(SRGBBasisCNNTorch, self).__init__()
         ks = (5,5)
 
@@ -234,16 +309,7 @@ class SRGBBasisCNNTorch(nn.Module):
         n = self.msds.shape[1]
 
         self.out_channels = n
-        self.seq = nn.Sequential(
-            nn.Conv2d(size[-1], 128, kernel_size=ks, stride=(1,1), padding='same'),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(128, 256, kernel_size=(3,3), stride=(1,1), padding='same'),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(256, 128, kernel_size=(3,3), stride=(1,1), padding='same'),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(128, self.out_channels, kernel_size=(1,1), padding='same'),
-            nn.ReLU(inplace=True),
-        )
+        self.seq = create_backbone(network_size, size, ks, self.out_channels)
         
         self.device = device
         self.size = size
@@ -258,7 +324,6 @@ class SRGBBasisCNNTorch(nn.Module):
         gm, gauss = self.R(IFS, y_in)
         y = IFS@gm
         return y
-        # return {'output':y, 'regularization':gauss}
     
     def conv(self, x):
         n = self.out_channels
@@ -266,8 +331,6 @@ class SRGBBasisCNNTorch(nn.Module):
         params = self.seq(x)
         params = params.permute(0, 2, 3, 1).reshape((self.size[0]*self.size[1],n,1))
         
-        # b = 1 - torch.norm(params, dim=-2, keepdim=True)
-        # weights = torch.concat([params,b], dim=-2)
         self.regularization = torch.abs(self.l2_regularization - torch.norm(params, dim=-2).mean())
         weights = params
         return weights
@@ -357,13 +420,22 @@ def create_DGcnn(samples, device, n, size, ridge, reg=0.0, basis=None):
     return cnn, f, "direct_gcnn"
 
 def create_DGcnn_fixed(samples, device, n, size, ridge, reg=0.0, basis=None):
-    cnn = DirectGaussianCNNTorch(device=device, n=n, size=size, fixed_means=True, std_regularization=reg)
+    cnn = DirectGaussianCNNTorch(device=device, n=n, size=size, fixed_means=True, std_regularization=reg, network_size='big')
     def f(X,y):
         cnn.training = False
         Rs, _ = cnn.R(X,y)
         cnn.training = True
         return Rs
     return cnn, f, "direct_gcnn_fixed"
+
+def create_DGcnn_fixed_small(samples, device, n, size, ridge, reg=0.0, basis=None):
+    cnn = DirectGaussianCNNTorch(device=device, n=n, size=size, fixed_means=True, std_regularization=reg, network_size='small')
+    def f(X,y):
+        cnn.training = False
+        Rs, _ = cnn.R(X,y)
+        cnn.training = True
+        return Rs
+    return cnn, f, "direct_gcnn_fixed_small"
 
 def create_SRGBCNN_Mallett(samples, device, n, size, ridge, reg=0.0, basis=colour.SpectralShape(380, 780, 10)):
     basis_fns=colour.recovery.MSDS_BASIS_FUNCTIONS_sRGB_MALLETT2019
@@ -387,7 +459,24 @@ def create_SRGBCNN_Paper(samples, device, n, size, ridge, reg=0.0, basis=colour.
         return Rs
     return cnn, f, "srgb_basis_cnn_paper"
 
-def create_SRGBCNN_Munsell(samples, device, n, size, ridge, reg=0.0, basis=None):
+def create_SRGBCNN_Combined(samples, device, n, size, ridge, reg=0.0, basis=colour.SpectralShape(380, 780, 10)):
+    basis_fns =load_basis('./measurements/surfaces')
+    basis_fns = basis_fns.extrapolate(basis).interpolate(basis)
+
+    basis_fns2 = colour.recovery.MSDS_BASIS_FUNCTIONS_sRGB_MALLETT2019
+    basis_fns2 = basis_fns2.extrapolate(basis).interpolate(basis)
+
+    basis = colour.MultiSpectralDistributions(domain=basis_fns.domain, data = np.concatenate([basis_fns.values, basis_fns2.values], axis=-1))
+
+    cnn = SRGBBasisCNNTorch(device=device, msds=basis, size=size, fixed_means=True, l2_regularization=reg)  # type: ignore
+    def f(X,y):
+        cnn.training = False
+        Rs, _ = cnn.R(X,y)
+        cnn.training = True
+        return Rs
+    return cnn, f, "srgb_basis_cnn_Combined"
+
+def create_SRGBCNN_Munsell(samples, device, n, size, ridge, reg=0.0,  basis=colour.SpectralShape(380, 780, 10)):
     cnn = SRGBBasisCNNTorch(device=device, msds=basis, size=size, fixed_means=True, l2_regularization=reg)  # type: ignore
     def f(X,y):
         cnn.training = False
@@ -402,3 +491,17 @@ def create_Rcnn(samples, device, n, size, ridge, reg=0.0, basis=None):
         Rs = cnn.spds
         return Rs
     return cnn, f, "refined"
+
+if __name__ == '__main__':
+    import numpy as np
+    basis=colour.SpectralShape(380, 780, 10)
+    basis_fns =load_basis('./measurements/surfaces')
+    basis_fns = basis_fns.extrapolate(basis).interpolate(basis)
+    print(basis_fns)
+
+    basis_fns2 = colour.recovery.MSDS_BASIS_FUNCTIONS_sRGB_MALLETT2019
+    basis_fns2 = basis_fns2.extrapolate(basis).interpolate(basis)
+    print(basis_fns2)
+
+    basis = colour.MultiSpectralDistributions(domain=basis_fns.domain, data = np.concatenate([basis_fns.values, basis_fns2.values], axis=-1))
+    print(basis.values.shape)

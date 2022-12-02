@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 import os
-from filter_measurment.utilities import *
+from utilities import *
 from torch.utils.data import Dataset
 import torch
 

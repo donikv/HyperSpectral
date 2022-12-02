@@ -9,11 +9,11 @@ from scipy.ndimage import median_filter
 from skimage.filters.rank import mean, median, minimum
 import matplotlib.pyplot as plt
 from colour.colorimetry import SpectralDistribution, MultiSpectralDistributions, SpectralShape
-from filter_measurment.utilities import *
-from filter_measurment.models import *
-from filter_measurment.loader import *
-from filter_measurment.visualize import show, visualize_set_program
-import filter_measurment.models as models
+from utilities import *
+from models import *
+from loader import *
+from visualize import show, visualize_set_program
+import models as models
 visualize_set_program(os.path.basename(__file__))
 
 def visualize_fitted(Rs, result_spectral_shape, camspecs, size, cwd, image_dir):
