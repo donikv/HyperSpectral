@@ -379,6 +379,11 @@ def fit(model, X, y, optim, loss_fn, epochs, reg, valid_loss, X_valid=None, y_va
                 # print(f"epoch {e}: loss {loss.cpu().detach().numpy().mean()}")
     return model.state_dict(), best_params, train_losses, valid_losses
 
+def validate(model, images, valid_loss, X_valid, y_valid):
+    ygm = model(X_valid, images)
+    loss1 = valid_loss(ygm, y_valid)
+    return loss1
+
 def fit_dataset(model, dataset, optim, loss_fn, epochs, reg, device, batch_size=1, verbose=0):
     f = torch.zeros(1)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)

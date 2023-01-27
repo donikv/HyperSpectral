@@ -18,4 +18,4 @@ def show():
 def visualize_set_program(p):
     global program, date_time
     program = p
-    date_time = datetime.now().strftime("%d%m%Y_%H%M%S")
+    date_time = datetime.now().strftime("%y%m%d_%h%m%s")
